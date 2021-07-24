@@ -1,0 +1,17 @@
+﻿v4.6.2.0
+ Update to FiddlerCore 4.6.2.0
+ Added BasicFormatsForCore (for .NET4) to allow import/export of HAR/PCAP/CURL/etc
+
+v4.6.1.5
+ Add SubjectAltNames to generated certificates 
+ Prefer the CertEnroll certificate provider on Windows 7+ for compat with upcoming Chrome release (Breaking change, see http://textslashplain.com/2015/08/25/fiddler-certificate-generators/; set preference fiddler.certmaker.PreferCertEnroll to "false" to revert)
+ Major architectural changes to improve scalability
+
+v4.5.1.3
+Fix FindGatewayForOrigin to include trailing slash on URL when calling into WinHTTP's WinHttpGetProxyForUrl when a Proxy AutoConfig file is in use.
+Add check for SDCH to isUnsupportedEncoding()
+Unset AllowRemoteClients from FiddlerCoreStartupFlags.Default, related to http://blog.jpcert.or.jp/2015/05/fiddler-cores-insecure-default-flag-may-lead-to-open-proxy-issue.html.
+
+v4.5.1.0 [Ship 4/23/2015] 
+Important security fix preventing 407 smuggling
+Important compat fix propagating TCP/IP FIN on improperly-terminated CHUNKED responses (Browsium fix)

@@ -1,45 +1,119 @@
 ﻿using Fiddler;
+using Microsoft.Win32;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Management;
 using System.Net;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace ConsoleApp5
 {
-    internal class Program
+    internal static class Program
     {
         private static void Main(string[] args)
         {
-            Console.Title = "Kebs's Instant Gifting";
-            // Detect when the app is closed so we can delete the proxy
-            _handler += new EventHandler(Handler);
-            SetConsoleCtrlHandler(_handler, true);
+            if (args.Length == 0)
+            {
+                Menu();
+            }
+            else
+            {
+                string lpApplicationName = args[0];
+                string input = "\"" + ((IEnumerable<string>)args).Skip<string>(1).Aggregate<string>((Func<string, string, string>)((x, y) => x + "\" \"" + y)) + "\"";
+                string lpCommandLine = input.Replace("\"--no-proxy-server\"", "");
+
+                Program.STARTUPINFO lpStartupInfo = new Program.STARTUPINFO();
+                Program.PROCESS_INFORMATION lpProcessInformation;
+                if (!Program.CreateProcess(lpApplicationName, lpCommandLine, IntPtr.Zero, IntPtr.Zero, false, 2U, IntPtr.Zero, (string)null, ref lpStartupInfo, out lpProcessInformation))
+                    throw new Win32Exception();
+
+                Program.AllocConsole();
+                Console.WriteLine("App: " + lpApplicationName);
+                Console.WriteLine("PID: " + lpProcessInformation.dwProcessId);
+                Console.WriteLine("Args: " + lpCommandLine);
+
+                Program.DebugActiveProcessStop(lpProcessInformation.dwProcessId);
+                Process.GetProcessById(lpProcessInformation.dwProcessId).WaitForExit();
+                Console.WriteLine("Exited");
+                Thread.Sleep(1000);
+            }
+        }
+
+        private static void Menu()
+        {
+            Console.Title = "League Instant Gifting by kebs";
 
             // Find League process
             Process[] processesByName = Process.GetProcessesByName("LeagueClientUx");
             while (processesByName.Length == 0)
             {
                 processesByName = Process.GetProcessesByName("LeagueClientUx");
-                Console.WriteLine("Looking for league...");
-                System.Threading.Thread.Sleep(10000);
+                //Console.WriteLine("Looking for league...");
+
+                RegistryKey registryKey = (RegistryKey)null;
+                string location = Assembly.GetExecutingAssembly().Location;
+                try
+                {
+                    registryKey = Registry.LocalMachine.CreateSubKey("Software\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\LeagueClientUx.exe");
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    Console.WriteLine("Access denied.");
+                    Thread.Sleep(1000);
+                    Environment.Exit(1);
+                }
+
+                Console.Write("Debugger hooked to: ");
+                string debugger = (registryKey?.GetValue("debugger") ?? (object)"Nothing").ToString().Replace(location, "This program");
+                Console.WriteLine(debugger);
+                Console.WriteLine("Type \"continue\", \"enable\" or \"disable\" to make changes to debugger");
+
+                switch (Console.ReadLine())
+                {
+                    case "enable":
+                        registryKey.SetValue("debugger", (object)location);
+                        break;
+
+                    case "disable":
+                        registryKey.DeleteValue("debugger");
+                        break;
+
+                    default:
+                        break;
+                }
+
                 Console.Clear();
             }
+
+            string cmdLine = GetCommandLine(processesByName[0]);
+
+            if (cmdLine.Contains("--no-proxy-server"))
+            {
+                Console.Write("Restart the client and enable debugging.");
+                Console.ReadLine();
+                Environment.Exit(-1);
+            }
+
             Console.WriteLine("League found!\nChecking certificates...");
 
-            // Get port and auth token from command line
-            string cmdLine;
-            using (FileStream fileStream = File.Open(Path.Combine(Path.GetDirectoryName(processesByName[0].MainModule.FileName), "lockfile"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                cmdLine = new StreamReader((Stream)fileStream).ReadToEnd();
-            string[] strArray = cmdLine.Split(new string[1] { ":" }, StringSplitOptions.None);
-            int port = Convert.ToInt32(strArray[2]);
-            string leagueToken = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("riot:" + strArray[3]));
+            // Detect when the app is closed so we can delete the proxy
+            _handler += new EventHandler(Handler);
+            SetConsoleCtrlHandler(_handler, true);
 
-            // Send a request to get all friends
-            string url = "https://127.0.0.1:" + port;
-            url += "/lol-chat/v1/friends";
+            // Get port and auth token from command line
+            string leagueToken = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("riot:" + Regex.Match(cmdLine, "(\"--remoting-auth-token=)([^\"]*)(\")").Groups[2].Value));
+            string port = int.Parse(Regex.Match(cmdLine, "(\"--app-port=)([^\"]*)(\")").Groups[2].Value).ToString();
+
+            //Send a request to get all friends
+            string url = "https://127.0.0.1:" + port + "/lol-chat/v1/friends";
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
             request.Headers.Add("Authorization", "Basic " + leagueToken);
             request.Accept = "application/json";
@@ -129,7 +203,7 @@ namespace ConsoleApp5
             Console.Clear();
             Console.WriteLine("Everything is ready. Open Store -> Gifting Center");
 
-            // Wait for input
+            //Wait for input
             Console.ReadLine();
 
             // Cleanup
@@ -145,6 +219,56 @@ namespace ConsoleApp5
 
         [DllImport("Kernel32")]
         private static extern bool SetConsoleCtrlHandler(EventHandler handler, bool add);
+
+        [DllImport("Kernel32")]
+        private static extern bool AllocConsole();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool DebugActiveProcessStop(int dwProcessId);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateProcess(
+        string lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string lpCurrentDirectory,
+        [In] ref Program.STARTUPINFO lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
+
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        private struct STARTUPINFO
+        {
+            public uint cb;
+            public string lpReserved;
+            public string lpDesktop;
+            public string lpTitle;
+            public uint dwX;
+            public uint dwY;
+            public uint dwXSize;
+            public uint dwYSize;
+            public uint dwXCountChars;
+            public uint dwYCountChars;
+            public uint dwFillAttribute;
+            public uint dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
 
         private delegate bool EventHandler(CtrlType sig);
 
@@ -175,10 +299,19 @@ namespace ConsoleApp5
             FiddlerApplication.Shutdown();
             // }
 
-            System.Threading.Thread.Sleep(8000);
+            Thread.Sleep(8000);
             Environment.Exit(-1);
 
             return true;
+        }
+
+        private static string GetCommandLine(this Process process)
+        {
+            using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + process.Id))
+            using (ManagementObjectCollection objects = searcher.Get())
+            {
+                return objects.Cast<ManagementBaseObject>().SingleOrDefault()?["CommandLine"]?.ToString();
+            }
         }
     }
 

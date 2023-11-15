@@ -1,5 +1,5 @@
 # ⚠ Patched
-This app doesn't work anymore, but instant gifting is still possible by directly sending a request to the store with correct item id.
+This app hasn't been working since February 2022, but instant gifting is still possible. Please refrain from adding me to ask about this, as this project is not being updated.
 
 
 # League of Legends Instant Gifting
